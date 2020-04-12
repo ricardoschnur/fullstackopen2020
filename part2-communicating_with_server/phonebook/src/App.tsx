@@ -1,10 +1,8 @@
 import React, { useEffect, useState } from "react";
-import axios from "axios";
-
-interface Person {
-  name: string;
-  number: string;
-}
+import PersonService from "./PersonService";
+import { Person } from "./Types";
+import * as O from "fp-ts/lib/Option";
+import { pipe } from "fp-ts/lib/pipeable";
 
 interface FilterProps {
   value: string;
@@ -47,25 +45,40 @@ const PersonForm: React.FunctionComponent<PersonFormProps> = ({
 
 interface PersonsProps {
   persons: Person[];
+  setPersons: (persons: Person[]) => void;
   filter: string;
 }
 
 const Persons: React.FunctionComponent<PersonsProps> = ({
   persons,
+  setPersons,
   filter,
-}) => (
-  <>
-    {persons
-      .filter((person) =>
-        person.name.toLowerCase().includes(filter.toLowerCase())
-      )
-      .map((person) => (
-        <div key={person.name}>
-          {person.name} {person.number}
-        </div>
-      ))}
-  </>
-);
+}) => {
+  const deleteWithConfirmation = (id: number) => {
+    if (window.confirm("Do you really want delete this number?")) {
+      PersonService.remove(id).then(() =>
+        setPersons(persons.filter((other) => other.id !== id))
+      );
+    }
+  };
+
+  return (
+    <>
+      {persons
+        .filter((person) =>
+          person.name.toLowerCase().includes(filter.toLowerCase())
+        )
+        .map((person) => (
+          <div key={person.name}>
+            {person.name} {person.number}
+            <button onClick={() => deleteWithConfirmation(person.id)}>
+              delete
+            </button>
+          </div>
+        ))}
+    </>
+  );
+};
 
 const App = () => {
   const [persons, setPersons] = useState<Person[]>([]);
@@ -74,18 +87,41 @@ const App = () => {
   const [filter, setFilter] = useState<string>("");
 
   useEffect(() => {
-    axios.get("http://localhost:3001/persons").then((response) => {
-      setPersons(response.data);
-    });
+    PersonService.getAll().then(setPersons);
   }, []);
 
   const addName = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (persons.find((person) => person.name.localeCompare(newName) === 0)) {
-      alert(`${newName} is already added to phonebook`);
-    } else {
-      setPersons(persons.concat({ name: newName, number: newNumber }));
-    }
+
+    const existingPerson = O.fromNullable(
+      persons.find((person) => person.name.localeCompare(newName) === 0)
+    );
+
+    const createNewPerson = () => {
+      PersonService.create({
+        name: newName,
+        number: newNumber,
+      })
+        .then((person) => persons.concat(person))
+        .then(setPersons);
+    };
+
+    const updateExistingPerson = (newNumber: string) => (person: Person) => {
+      const warningMessage = `${newName} is already added to phonebook, replace the old number with a new one?`;
+
+      if (window.confirm(warningMessage)) {
+        PersonService.update({ ...person, number: newNumber })
+          .then((person) =>
+            persons.map((other) => (other.id === person.id ? person : other))
+          )
+          .then(setPersons);
+      }
+    };
+
+    pipe(
+      existingPerson,
+      O.fold(createNewPerson, updateExistingPerson(newNumber))
+    );
   };
 
   const handleChange = (set: (val: string) => void) => (
@@ -107,7 +143,7 @@ const App = () => {
         onSubmit={addName}
       />
       <h3>Numbers</h3>
-      <Persons persons={persons} filter={filter} />
+      <Persons persons={persons} setPersons={setPersons} filter={filter} />
     </div>
   );
 };
