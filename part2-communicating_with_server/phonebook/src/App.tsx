@@ -3,6 +3,7 @@ import PersonService from "./PersonService";
 import { Person } from "./Types";
 import * as O from "fp-ts/lib/Option";
 import { pipe } from "fp-ts/lib/pipeable";
+import "./App.css";
 
 interface FilterProps {
   value: string;
@@ -56,9 +57,9 @@ const Persons: React.FunctionComponent<PersonsProps> = ({
 }) => {
   const deleteWithConfirmation = (id: number) => {
     if (window.confirm("Do you really want delete this number?")) {
-      PersonService.remove(id).then(() =>
-        setPersons(persons.filter((other) => other.id !== id))
-      );
+      PersonService.remove(id)
+        .then(() => persons.filter((other) => other.id !== id))
+        .then(setPersons);
     }
   };
 
@@ -80,11 +81,42 @@ const Persons: React.FunctionComponent<PersonsProps> = ({
   );
 };
 
+interface NotificationProps {
+  message: O.Option<Message>;
+}
+
+const Notification: React.FunctionComponent<NotificationProps> = ({
+  message,
+}) =>
+  pipe(
+    message,
+    O.fold(
+      () => <></>,
+      (message) => <div className={message.kind}>{message.message}</div>
+    )
+  );
+
+interface Message {
+  message: string;
+  kind: "success" | "error";
+}
+
+const displayMessage = (
+  message: Message,
+  setMessage: (message: O.Option<Message>) => void
+) => {
+  setMessage(O.some(message));
+  setTimeout(() => {
+    setMessage(O.none);
+  }, 3000);
+};
+
 const App = () => {
   const [persons, setPersons] = useState<Person[]>([]);
   const [newName, setNewName] = useState<string>("");
   const [newNumber, setNewNumber] = useState<string>("");
   const [filter, setFilter] = useState<string>("");
+  const [message, setMessage] = useState<O.Option<Message>>(O.none);
 
   useEffect(() => {
     PersonService.getAll().then(setPersons);
@@ -103,17 +135,38 @@ const App = () => {
         number: newNumber,
       })
         .then((person) => persons.concat(person))
-        .then(setPersons);
+        .then(setPersons)
+        .then(() =>
+          displayMessage(
+            { message: `Added ${newName}`, kind: "success" },
+            setMessage
+          )
+        );
     };
 
     const updateExistingPerson = (newNumber: string) => (person: Person) => {
       const warningMessage = `${newName} is already added to phonebook, replace the old number with a new one?`;
+      const successMessage = `Updated ${person.name}`;
+      const errorMessage = `Information of ${person.name} has already been removed from server`;
 
       if (window.confirm(warningMessage)) {
         PersonService.update({ ...person, number: newNumber })
-          .then((person) =>
-            persons.map((other) => (other.id === person.id ? person : other))
-          )
+          .then((person) => {
+            displayMessage(
+              { message: successMessage, kind: "success" },
+              setMessage
+            );
+            return persons.map((other) =>
+              other.id === person.id ? person : other
+            );
+          })
+          .catch(() => {
+            displayMessage(
+              { message: errorMessage, kind: "error" },
+              setMessage
+            );
+            return persons.filter((other) => other.id !== person.id);
+          })
           .then(setPersons);
       }
     };
@@ -133,6 +186,7 @@ const App = () => {
   return (
     <div>
       <h2>Phonebook</h2>
+      <Notification message={message} />
       <Filter value={filter} onChange={handleChange(setFilter)} />
       <h3>add a new</h3>
       <PersonForm
