@@ -1,7 +1,23 @@
 import express = require("express");
+import morgan = require("morgan");
 
 const app = express();
 app.use(express.json());
+
+// Morgan configuration for everything but POST requests
+app.use(
+  morgan("tiny", {
+    skip: (request, _response) => request.method === "POST",
+  })
+);
+
+// Morgan configuration for POST requests
+morgan.token("body", (request, _response) => JSON.stringify(request.body));
+app.use(
+  morgan("method :url :status :res[content-length] - :response-time ms :body", {
+    skip: (request, _response) => request.method !== "POST",
+  })
+);
 
 interface Person {
   name: string;
